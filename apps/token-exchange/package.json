@@ -1,0 +1,21 @@
+{
+  "name": "@documenso/token-exchange",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "lint:fix": "next lint --fix",
+    "clean": "rimraf .next && rimraf node_modules"
+  },
+  "dependencies": {
+    "@documenso/lib": "*",
+    "@documenso/prisma": "*",
+    "next": "15.5.12"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "5.6.2"
+  }
+}

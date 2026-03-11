@@ -1,0 +1,72 @@
+###########################
+#     BASE CONTAINER      #
+###########################
+FROM node:22-alpine3.22 AS base
+
+RUN apk add --no-cache openssl
+WORKDIR /app
+
+###########################
+#    BUILDER CONTAINER    #
+###########################
+FROM base AS builder
+
+RUN apk add --no-cache libc6-compat jq
+COPY . .
+RUN npm install -g "turbo@^1.9.3"
+RUN turbo prune --scope=@documenso/token-exchange --docker
+
+###########################
+#   INSTALLER CONTAINER   #
+###########################
+FROM base AS installer
+
+RUN apk add --no-cache libc6-compat
+ENV HUSKY=0
+ENV DOCKER_OUTPUT=1
+ENV NEXT_TELEMETRY_DISABLED=1
+
+WORKDIR /app
+
+COPY .gitignore .gitignore
+COPY --from=builder /app/out/json/ .
+COPY --from=builder /app/out/package-lock.json ./package-lock.json
+COPY --from=builder /app/patches ./patches
+RUN npm ci
+
+COPY --from=builder /app/out/full/ .
+COPY turbo.json turbo.json
+RUN npm install -g "turbo@^1.9.3"
+RUN turbo run build --filter=@documenso/token-exchange...
+
+###########################
+#     RUNNER CONTAINER    #
+###########################
+FROM base AS runner
+
+ENV HUSKY=0
+ENV DOCKER_OUTPUT=1
+ENV NODE_ENV=production
+
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nodejs
+
+USER nodejs
+
+WORKDIR /app
+
+COPY --from=builder --chown=nodejs:nodejs /app/out/json/ .
+COPY --from=builder --chown=nodejs:nodejs /app/patches ./patches
+RUN npm ci --only=production
+
+COPY --from=installer --chown=nodejs:nodejs /app/apps/token-exchange ./apps/token-exchange
+COPY --from=installer --chown=nodejs:nodejs /app/packages/prisma/schema.prisma ./packages/prisma/schema.prisma
+COPY --from=installer --chown=nodejs:nodejs /app/packages/prisma/migrations ./packages/prisma/migrations
+COPY --from=installer --chown=nodejs:nodejs /app/packages/lib ./packages/lib
+RUN npx prisma generate --schema ./packages/prisma/schema.prisma
+
+WORKDIR /app/apps/token-exchange
+
+EXPOSE 3000
+
+CMD ["npx", "next", "start", "-p", "3000"]
