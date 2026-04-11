@@ -7,6 +7,7 @@ import { env } from '@documenso/lib/utils/env';
 
 import { AppError } from '../../errors/app-error';
 import { createDocumentData } from '../../server-only/document-data/create-document-data';
+import { extractPdfPlaceholders } from '../../server-only/pdf/auto-place-fields';
 import { normalizePdf } from '../../server-only/pdf/normalize-pdf';
 import { uploadS3File } from './server-actions';
 
@@ -14,6 +15,12 @@ type File = {
   name: string;
   type: string;
   arrayBuffer: () => Promise<ArrayBuffer>;
+};
+
+const bufferToArrayBuffer = (buffer: Buffer): ArrayBuffer => {
+  const copy = new Uint8Array(buffer.length);
+  copy.set(buffer);
+  return copy.buffer;
 };
 
 /**
@@ -55,12 +62,16 @@ export const putNormalizedPdfFileServerSide = async (
 
   const normalized = await normalizePdf(buffer, options);
 
+  const { cleanedPdf } = await extractPdfPlaceholders(normalized);
+
   const fileName = file.name.endsWith('.pdf') ? file.name : `${file.name}.pdf`;
 
   const documentData = await putFileServerSide({
     name: fileName,
     type: 'application/pdf',
-    arrayBuffer: async () => Promise.resolve(normalized),
+    arrayBuffer: async () => {
+      return await Promise.resolve(bufferToArrayBuffer(cleanedPdf));
+    },
   });
 
   return await createDocumentData({
